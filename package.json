@@ -1,0 +1,30 @@
+{
+  "name": "xctool-node",
+  "version": "0.0.1",
+  "description": "Node wrapper around xctool",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "xctool-node": "./bin/xctool-node"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/jesseditson/xctool-node.git"
+  },
+  "keywords": [
+    "node",
+    "xctool"
+  ],
+  "author": "Jesse Ditson <jesse.ditson@gmail.com>",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/jesseditson/xctool-node/issues"
+  },
+  "dependencies": {
+    "execSync": "~1.0.1-pre",
+    "ffi": "~1.2.7",
+    "glob": "^4.0.5",
+    "terminal-menu": "~0.3.2"
+  }
+}
