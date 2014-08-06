@@ -21,14 +21,14 @@ var printUsage = function(){
   console.log('    xctool-node [-t|--target]            Specify a target to run.');
 }
 
-if (hasArg(/(^|\b)(-h|--help)(\b|$)/)) {
+if (hasArg(/(^|[^\w])(-h|--help)([^\w]|$)/)) {
   // print usage
   printUsage();
   return;
 }
 
-var runSuite = hasArg(/(^|\b)(-S|--suite)(\b|$)/);
-var target = hasArg(/(?:^|\b)(?:-t|--target)[\b\s]+([^-]+)/);
+var runSuite = hasArg(/(^|[^\w])(-S|--suite)([^\w]|$)/);
+var target = hasArg(/(?:^|[^\w])(?:-t|--target)[[^\w]\s]+([^-]+)/);
 target = target ? target[1] : false;
 
 var menuInfo = { width: 40, x: 4, y: 4 };
@@ -124,7 +124,7 @@ xctool('run-tests','-listTestsOnly',function(data){
 },function(err){
   if (err) {
     console.error(err);
-  } else if(!hasArg(/(^|\b)(-s|--silent)(\b|$)/)){
+  } else if(!hasArg(/(^|[^\w])(-s|--silent)([^\w]|$)/)){
     // show the gui
       menu = terminalmenu(menuInfo);
       currentObj = tests;
@@ -142,17 +142,16 @@ xctool('run-tests','-listTestsOnly',function(data){
     // cli interface
     var runnables = [];
     Object.keys(tests).forEach(function(target){
-      Object.keys(target).forEach(function(suite){
+      Object.keys(tests[target]).forEach(function(suite){
         if (runSuite) {
           runnables.push([target,suite]);
         } else {
-          Object.keys(suite).forEach(function(test){
+          Object.keys(tests[target][suite]).forEach(function(test){
             runnables.push([target,suite,test]);
           });
         }
       });
     });
-    return console.log(runnables);
     async.series(runnables.map(function(arr){
       return runTests.bind(null,arr);
     }),function(){
