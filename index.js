@@ -8,7 +8,8 @@ var async = require('async');
 
 var args = process.argv.slice(2);
 var hasArg = function(regex){
-  return regex.test(args.join(' '));
+  var match = args.join(' ').match(regex);
+  return match;
 }
 
 var printUsage = function(){
@@ -17,6 +18,7 @@ var printUsage = function(){
   console.log('    xctool-node [-h|--help]              Print this help.');
   console.log('    xctool-node [-s|--silent]            Run one of the silent commands - this will not show a prompt, just run.');
   console.log('    xctool-node [-S|--suite]             Runs test suites instead of specific tests between resets. If in console mode, will execute selected suite instead of selected test.');
+  console.log('    xctool-node [-t|--target]            Specify a target to run.');
 }
 
 if (hasArg(/(^|\b)(-h|--help)(\b|$)/)) {
@@ -26,6 +28,8 @@ if (hasArg(/(^|\b)(-h|--help)(\b|$)/)) {
 }
 
 var runSuite = hasArg(/(^|\b)(-S|--suite)(\b|$)/);
+var target = hasArg(/(?:^|\b)(?:-t|--target)[\b\s]+([^-]+)/);
+target = target ? target[1] : false;
 
 var menuInfo = { width: 40, x: 4, y: 4 };
 var menu;
@@ -103,15 +107,13 @@ var currentTests;
 var m;
 xctool('run-tests','-listTestsOnly',function(data){
   var line = data.toString().trim();
-  var runTestRegEx = /run-test\s+([^\(]+)/;
-  console.log(line);
-  if(runTestRegEx.test(line)){
-    while(m = runTestRegEx.exec(line)){
-      var testsName = m[1].replace(/\.(o|x)ctest/i,'').trim();
-      tests[testsName] = {};
-      currentTests = testsName;
-    }
-  } else if(currentTests){
+  var runTestRegEx = /run-test\s+([^\(]+)/g;
+  while(m = runTestRegEx.exec(line)){
+    var testsName = m[1].replace(/\.(o|x)ctest/i,'').trim();
+    tests[testsName] = {};
+    currentTests = testsName;
+  }
+  if(currentTests){
     var testRegEx = /~ -\[([^\s]+)\s*([^\]]+)?\]/g;
     while(m = testRegEx.exec(line)){
       var suite = m[1];
@@ -119,8 +121,10 @@ xctool('run-tests','-listTestsOnly',function(data){
       tests[currentTests][suite][m[2]] = true;
     }
   }
-},function(){
-  if(!hasArg(/(^|\b)(-s|--silent)(\b|$)/)){
+},function(err){
+  if (err) {
+    console.error(err);
+  } else if(!hasArg(/(^|\b)(-s|--silent)(\b|$)/)){
     // show the gui
       menu = terminalmenu(menuInfo);
       currentObj = tests;
