@@ -11,14 +11,17 @@ var hasArg = function(regex){
   var match = args.join(' ').match(regex);
   return match;
 }
+var pbcopy = function(data) { var proc = require('child_process').spawn('pbcopy'); proc.stdin.write(data); proc.stdin.end(); }
 
 var printUsage = function(){
   console.log('usage: xctool-node [OPTIONS]');
   console.log('Options:');
   console.log('    xctool-node [-h|--help]              Print this help.');
-  console.log('    xctool-node [-s|--silent]            Run one of the silent commands - this will not show a prompt, just run.');
+  console.log('    xctool-node [-s|--silent]            Run silently. this will not show a prompt, just run the test suite.');
   console.log('    xctool-node [-S|--suite]             Runs test suites instead of specific tests between resets. If in console mode, will execute selected suite instead of selected test.');
-  console.log('    xctool-node [-t|--target]            Specify a target to run.');
+  console.log('    xctool-node [-b|--build]             Rebuild the target before running the suite.');
+  console.log('    xctool-node [-t|--target]            Specify a target to run, optionally specifying a suite and test as well, in the format: SomeTestTarget:SomeTestClass/testSomeMethod (only available with the -s flag)');
+  console.log('    xctool-node [-o|--output]            Output results to a file.');
 }
 
 if (hasArg(/(^|[^\w])(-h|--help)([^\w]|$)/)) {
@@ -28,8 +31,12 @@ if (hasArg(/(^|[^\w])(-h|--help)([^\w]|$)/)) {
 }
 
 var runSuite = hasArg(/(^|[^\w])(-S|--suite)([^\w]|$)/);
-var target = hasArg(/(?:^|[^\w])(?:-t|--target)[[^\w]\s]+([^-]+)/);
-target = target ? target[1] : false;
+var rebuild = hasArg(/(^|[^\w])(-b|--build)([^\w]|$)/);
+var testTarget = hasArg(/(?:^|[^\w])(?:-t|--target)[\s]+([^:]+)?:?([^\/]+)?\/?([^\s]+)?/);
+testTarget = testTarget ? testTarget.slice(1) : false;
+var output = hasArg(/(?:^|[^\w])(?:-o|--output)[\s]+([^\s]+)/);
+output = output ? output[1] : false;
+var silent = hasArg(/(^|[^\w])(-s|--silent)([^\w]|$)/);
 
 var menuInfo = { width: 40, x: 4, y: 4 };
 var menu;
@@ -47,27 +54,60 @@ var getObjectWithDepth = function(depth,o){
   }
 }
 
+var runXCToolCommand = function(){
+  var args = Array.prototype.slice.call(arguments);
+  var cbType = (typeof args[args.length-1]);
+  if(cbType == 'function' || cbType == 'undefined'){
+    var callback = args.pop();
+  }
+  var test = xctool.apply(null,args);
+  test.stdout.pipe(process.stdout);
+  test.stderr.pipe(process.stderr);
+  test.on('close',function(code,signal){
+    if(callback) callback();
+  });
+  if (output) {
+    var file = fs.createWriteStream(output,{mode:0755});
+    test.stdout.pipe(file);
+  }
+  return test;
+};
+
 var runTests = function(args,callback){
   //SomeTestTarget:SomeTestClass/testSomeMethod
   var onlyArg = args.slice(0,2).join(':');
   if(args.length == 3){
     onlyArg += '/' + args[2];
-  } else if(args.length != 2) {
-    throw new Error('Bad number of arguments passed to runTests - must be 2 or 3, had',args);
+  } else if(!args.length || args.length > 3) {
+    throw new Error('Bad number of arguments passed to runTests: ',args);
   }
-  var test = xctool('run-tests','-freshSimulator','-freshInstall','-only',onlyArg);
-  test.stdout.pipe(process.stdout);
-  test.stderr.pipe(process.stderr);
-  test.on('close',function(code,signal){
-    callback();
-  });
+  if(rebuild){
+    runXCToolCommand('build-tests',function(){
+      runXCToolCommand('run-tests','-freshSimulator','-freshInstall','-only',onlyArg,callback);
+    });
+  } else {
+    runXCToolCommand('run-tests','-freshSimulator','-freshInstall','-only',onlyArg,callback);
+  }
+  return onlyArg;
 }
+
+if(silent && testTarget){
+  runTests(testTarget);
+  return;
+}
+
+var runningTest;
 
 var menuSelected = function(label) {
   menu.reset();
   menu.close();
   menu = terminalmenu(menuInfo);
-  if (label == 'HELP') {
+  if (label == 'REBUILD TESTS') {
+    menu.reset();
+    menu.close();
+    runXCToolCommand('build-tests');
+    return;
+  } else if (label == 'HELP') {
     menu.reset();
     menu.close();
     printUsage();
@@ -81,14 +121,27 @@ var menuSelected = function(label) {
     currentObj = getObjectWithDepth(currentDepth);
     menuSelected();
     return;
+  } else if (label == 'REBUILD FIRST' || label == 'DON\'T REBUILD') {
+    menu.reset();
+    menu.close();
+    rebuild = label != 'DON\'T REBUILD';
+    var targetArg = runTests(currentDepth.concat(runningTest));
+    var cmd = 'xctool-node -s ' +(rebuild ? '-b ' : '')+ '-t ' + targetArg.replace(/\s/g,'\\ ') + ' ' + (output ? '-o ' + output : '');
+    console.log('Run again with:\n' + cmd);
+    var historyFile = process.env['HISTFILE'] || (process.env['HOME'] + '/.bash_history');
+    fs.appendFile(historyFile,cmd);
+    pbcopy(cmd);
+    return;
   } else {
-    menu.write('~~~~   '+label+'   ~~~~\n');
+    menu.write(label+'\n');
     menu.write('-------------------------\n');
     // menu.add('BACK');
-    if (currentObj[label] === true || (runSuite && currentDepth.length == 1)) {
-      menu.reset();
-      menu.close();
-      runTests(currentDepth.concat(label));
+    if(runningTest){
+      menu.add('REBUILD FIRST');
+      menu.add('DON\'T REBUILD');
+    } else if (currentObj[label] === true || (runSuite && currentDepth.length == 1)) {
+      runningTest = label;
+      menuSelected('RUN ' + runningTest);
       return;
     } else {
       Object.keys(currentObj[label] ? currentObj[label] : currentObj).forEach(function(test){
@@ -124,18 +177,19 @@ xctool('run-tests','-listTestsOnly',function(data){
 },function(err){
   if (err) {
     console.error(err);
-  } else if(!hasArg(/(^|[^\w])(-s|--silent)([^\w]|$)/)){
+  } else if(!silent){
     // show the gui
       menu = terminalmenu(menuInfo);
       currentObj = tests;
       menu.reset();
       menu.write('~~~~   XCODE TESTS   ~~~~\n');
       menu.write('-------------------------\n');
-      menu.add('HELP');
-      menu.add('EXIT');
       Object.keys(tests).forEach(function(test){
         menu.add(test);
       });
+      menu.add('REBUILD TESTS');
+      menu.add('HELP');
+      menu.add('EXIT');
       menu.on('select',menuSelected);
       menu.createStream().pipe(process.stdout);
   } else {
